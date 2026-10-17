@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR 猫娘相机与互动</title>
+  <title>AR 猫娘相机与手势识别</title>
+  <!-- 引入 MediaPipe 手势识别库 -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -32,92 +35,112 @@
       left: 0;
       width: 100%;
       height: 100%;
-      transform: scaleX(-1); /* 镜像画面，符合镜头习惯 */
-    }
-    .overlay-ui {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 10px 20px;
-      border-radius: 20px;
-      display: flex;
-      gap: 15px;
-    }
-    button {
-      background: #ff69b4;
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 15px;
-      cursor: pointer;
-      font-weight: bold;
-      transition: 0.2s;
-    }
-    button:hover {
-      background: #ff1493;
+      transform: scaleX(-1);
     }
     .status-text {
       position: absolute;
       top: 15px;
       left: 15px;
       z-index: 10;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 6px 12px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 8px 14px;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 15px;
       color: #00ffcc;
+      font-weight: bold;
+    }
+    .gesture-result {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(255, 105, 180, 0.85);
+      color: white;
+      padding: 10px 24px;
+      border-radius: 20px;
+      font-size: 18px;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
 
   <div class="container">
-    <div class="status-text" id="status">正在初始化摄像头...</div>
-    <video id="webcam" autoplay playsinline></video>
+    <div class="status-text" id="status">正在加载 AI 手势模型...</div>
+    <video id="webcam" autoplay playsinline style="display:none;"></video>
     <canvas id="output_canvas"></canvas>
-    
-    <div class="overlay-ui">
-      <button onclick="toggleCamera()">开启/关闭摄像头</button>
-      <button onclick="playInteraction()">猜拳互动</button>
-    </div>
+    <div class="gesture-result" id="gesture">请向镜头伸出手掌 / 出拳</div>
   </div>
 
   <script>
-    const video = document.getElementById('webcam');
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
     const statusText = document.getElementById('status');
-    let stream = null;
+    const gestureText = document.getElementById('gesture');
 
-    async function initCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-        statusText.innerText = "摄像头连线成功 | AR猫娘就绪";
-      } catch (err) {
-        statusText.innerText = "无法获取摄像头，请检查权限！";
-        console.error("Camera error: ", err);
-      }
-    }
+    function onResults(results) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
 
-    function toggleCamera() {
-      if (stream) {
-        let tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-        stream = null;
-        statusText.innerText = "摄像头已关闭";
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        statusText.innerText = "🟢 已检测到手势 | AR 猫娘互动中";
+        
+        // 简单手势检测逻辑 (食指与中指位置)
+        const landmarks = results.multiHandLandmarks[0];
+        const indexTip = landmarks[8].y;
+        const indexMcp = landmarks[5].y;
+        const middleTip = landmarks[12].y;
+        const middleMcp = landmarks[9].y;
+
+        if (indexTip < indexMcp && middleTip < middleMcp) {
+          gestureText.innerText = "✌️ 识别到手势：剪刀！猫娘出石头，你输啦~";
+        } else if (indexTip < indexMcp) {
+          gestureText.innerText = "☝️ 识别到手势：指点/招呼！喵~";
+        } else if (indexTip > indexMcp && middleTip > middleMcp) {
+          gestureText.innerText = "✊ 识别到手势：石头！猫娘出布，你输啦~";
+        } else {
+          gestureText.innerText = "✋ 识别到手势：布！平手喵~";
+        }
       } else {
-        initCamera();
+        statusText.innerText = "🟡 寻找手部中...";
+        gestureText.innerText = "请向镜头伸出手掌 / 出拳";
       }
+      canvasCtx.restore();
     }
 
-    function playInteraction() {
-      alert("喵~ 请向镜头伸出手掌开始猜拳吧！");
-    }
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
 
-    // 页面加载自动开启摄像头
-    window.onload = initCamera;
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start().then(() => {
+      statusText.innerText = "🟢 摄像头与 AI 识别已就绪";
+    }).catch(err => {
+      statusText.innerText = "🔴 摄像头开启失败";
+      console.error(err);
+    });
   </script>
 </body>
 </html>
