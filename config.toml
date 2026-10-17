@@ -1,0 +1,10 @@
+[plugin]
+id = "n.e.k.o_plugin_ar_catgirl"
+name = "AR 猫娘相机与互动"
+version = "0.1.0"
+description = "用于 Project N.E.K.O. 的 AR 猫娘相机与互动插件，支持电脑摄像头实景叠加与手势互动"
+author = "daige471"
+
+[entry]
+# 插件的主入口页面
+main = "index.html"
